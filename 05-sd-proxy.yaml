@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sd-proxy
+  namespace: lan-sd
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sd-proxy
+  template:
+    metadata:
+      labels:
+        app: sd-proxy
+    spec:
+      volumes:
+        - name: authdir
+          emptyDir: {}
+        - name: nginxconf
+          configMap:
+            name: sd-nginx-conf
+
+      initContainers:
+        - name: htpasswd
+          image: httpd:2.4-alpine
+          envFrom:
+            - secretRef:
+                name: sd-basic-auth
+          command: ["sh","-lc"]
+          args:
+            - |
+              set -e
+              HT=/usr/local/apache2/bin/htpasswd
+              $HT -Bbn "$user1" "$pass1" > /auth/htpasswd
+              $HT -Bbn "$user2" "$pass2" >> /auth/htpasswd
+              ls -l /auth/htpasswd
+          volumeMounts:
+            - name: authdir
+              mountPath: /auth
+
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 80
+              hostPort: 9988
+          volumeMounts:
+            - name: authdir
+              mountPath: /etc/nginx/auth
+            - name: nginxconf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sd-proxy
+  namespace: lan-sd
+spec:
+  selector:
+    app: sd-proxy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

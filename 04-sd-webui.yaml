@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sd-webui
+  namespace: lan-sd
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sd-webui
+  template:
+    metadata:
+      labels:
+        app: sd-webui
+    spec:
+      # Ha NINCS nvidia RuntimeClass-od, töröld ezt a sort.
+      # Ha VAN (nálad volt), akkor így nem függünk a nvidia.com/gpu allocatable-től.
+      runtimeClassName: nvidia
+
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: sd-workspace
+
+      initContainers:
+        - name: download-models
+          image: curlimages/curl:8.10.1
+          command: ["sh","-lc"]
+          args:
+            - |
+              set -euo pipefail
+              MODEL_DIR="/workspace/stable-diffusion-webui/models/Stable-diffusion"
+              mkdir -p "$MODEL_DIR"
+              cd "$MODEL_DIR"
+
+              # SD2 inpaint (retus/inpaint alap)
+              test -f 512-inpainting-ema.safetensors || \
+                curl -fL -o 512-inpainting-ema.safetensors \
+                  "https://huggingface.co/webui/stable-diffusion-2-inpainting/resolve/main/512-inpainting-ema.safetensors"
+
+              test -f 512-inpainting-ema.yaml || \
+                curl -fL -o 512-inpainting-ema.yaml \
+                  "https://huggingface.co/webui/stable-diffusion-2-inpainting/resolve/main/512-inpainting-ema.yaml"
+
+              echo "Model OK."
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+
+      containers:
+        - name: webui
+          image: ashleykza/stable-diffusion-webui:latest
+          ports:
+            - name: a1111
+              containerPort: 3001
+          env:
+            - name: VENV_PATH
+              value: /workspace/venvs/a1111
+            # ha nem akarod, hogy más UI-k is automatikusan induljanak,
+            # beállíthatod DISABLE_AUTOLAUNCH=1-re, de akkor A1111 sem fog feljönni automatikusan. :contentReference[oaicite:2]{index=2}
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          # ha biztosan van nvidia.com/gpu a node-on, akkor inkább ezt használd és töröld a runtimeClassName-t:
+          # resources:
+          #   limits:
+          #     nvidia.com/gpu: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sd-webui
+  namespace: lan-sd
+spec:
+  selector:
+    app: sd-webui
+  ports:
+    - name: a1111
+      port: 3001
+      targetPort: 3001
