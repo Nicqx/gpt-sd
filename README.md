@@ -22,3 +22,5 @@ kubectl apply -f 05-sd-proxy.yaml
 kubectl -n lan-sd rollout restart deploy/sd-proxy
 
 kubectl -n lan-sd rollout status deploy/sd-proxy
+
+http://localhost:9988/
